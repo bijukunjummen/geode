@@ -22,8 +22,12 @@ import org.apache.geode.internal.cache.PartitionedRegion;
 
 public class LuceneRawIndex extends LuceneIndexImpl {
 
-  protected LuceneRawIndex(String indexName, String regionPath, InternalCache cache) {
+  private String luceneFolderPath;
+
+  protected LuceneRawIndex(String indexName, String regionPath, InternalCache cache,
+      String luceneFolderPath) {
     super(indexName, regionPath, cache);
+    this.luceneFolderPath = luceneFolderPath;
   }
 
   @Override
@@ -32,8 +36,8 @@ public class LuceneRawIndex extends LuceneIndexImpl {
     if (mapper == null) {
       mapper = new HeterogeneousLuceneSerializer();
     }
-    RawLuceneRepositoryManager rawLuceneRepositoryManager =
-        new RawLuceneRepositoryManager(this, mapper);
+    RawLuceneRepositoryManager rawLuceneRepositoryManager = new RawLuceneRepositoryManager(this,
+        mapper, cache.getDistributionManager().getWaitingThreadPool(), luceneFolderPath);
     return rawLuceneRepositoryManager;
   }
 
@@ -50,4 +54,9 @@ public class LuceneRawIndex extends LuceneIndexImpl {
 
   @Override
   public void destroy(boolean initiator) {}
+
+  @Override
+  public boolean isIndexAvailable(int id) {
+    return true;
+  }
 }

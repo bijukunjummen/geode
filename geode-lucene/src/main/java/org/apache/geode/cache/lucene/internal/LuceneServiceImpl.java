@@ -166,8 +166,7 @@ public class LuceneServiceImpl implements InternalLuceneService {
     if (!regionPath.startsWith("/")) {
       regionPath = "/" + regionPath;
     }
-    String name = indexName + "#" + regionPath.replace('/', '_');
-    return name;
+    return indexName + "#" + regionPath.replace('/', '_');
   }
 
   public static String getUniqueIndexRegionName(String indexName, String regionPath,
@@ -182,7 +181,7 @@ public class LuceneServiceImpl implements InternalLuceneService {
     }
     Analyzer analyzer = new PerFieldAnalyzerWrapper(new StandardAnalyzer(), fieldAnalyzers);
     Set<String> fieldsSet = fieldAnalyzers.keySet();
-    String[] fields = fieldsSet.toArray(new String[fieldsSet.size()]);
+    String[] fields = fieldsSet.toArray(new String[0]);
 
     createIndex(indexName, regionPath, analyzer, fieldAnalyzers, serializer, allowOnExistingRegion,
         fields);
@@ -208,6 +207,7 @@ public class LuceneServiceImpl implements InternalLuceneService {
       cache.addRegionListener(regionListener);
       return;
     }
+
 
     if (!allowOnExistingRegion) {
       definedIndexMap.remove(LuceneServiceImpl.getUniqueIndexName(indexName, regionPath));

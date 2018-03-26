@@ -29,20 +29,24 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.IndexWriter;
+import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PowerMockIgnore;
@@ -64,13 +68,13 @@ import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PartitionRegionConfig;
 import org.apache.geode.internal.cache.PartitionedRegion;
-import org.apache.geode.internal.cache.PartitionedRegion.RetryTimeKeeper;
 import org.apache.geode.internal.cache.PartitionedRegionDataStore;
 import org.apache.geode.internal.cache.PartitionedRegionHelper;
 import org.apache.geode.internal.cache.execute.InternalRegionFunctionContext;
 import org.apache.geode.test.fake.Fakes;
 import org.apache.geode.test.junit.categories.LuceneTest;
 import org.apache.geode.test.junit.categories.UnitTest;
+import org.apache.geode.test.junit.rules.serializable.SerializableTemporaryFolder;
 
 @Category({UnitTest.class, LuceneTest.class})
 @RunWith(PowerMockRunner.class)
@@ -83,20 +87,24 @@ public class PartitionedRepositoryManagerJUnitTest {
   protected LuceneSerializer serializer;
   protected PartitionedRegionDataStore userDataStore;
   protected PartitionedRegionDataStore fileDataStore;
-  protected PartitionedRegionHelper prHelper;
   protected PartitionRegionConfig prConfig;
   protected LocalRegion prRoot;
 
-  protected Map<Integer, BucketRegion> fileAndChunkBuckets = new HashMap<Integer, BucketRegion>();
-  protected Map<Integer, BucketRegion> dataBuckets = new HashMap<Integer, BucketRegion>();
+  protected Map<Integer, BucketRegion> fileAndChunkBuckets = new HashMap<>();
+  protected Map<Integer, BucketRegion> dataBuckets = new HashMap<>();
   protected LuceneIndexStats indexStats;
   protected FileSystemStats fileSystemStats;
   protected LuceneIndexImpl indexForPR;
   protected PartitionedRepositoryManager repoManager;
   protected GemFireCacheImpl cache;
+  private final Map<Integer, Boolean> isIndexAvailableMap = new HashMap<>();
+
+  @Rule
+  public SerializableTemporaryFolder temporaryFolder = new SerializableTemporaryFolder();
+
 
   @Before
-  public void setUp() {
+  public void setUp() throws IOException {
     cache = Fakes.cache();
     userRegion = Mockito.mock(PartitionedRegion.class);
     userDataStore = Mockito.mock(PartitionedRegionDataStore.class);
@@ -117,7 +125,10 @@ public class PartitionedRepositoryManagerJUnitTest {
     DLockService.removeLockServiceForTests(PartitionedRegionHelper.PARTITION_LOCK_SERVICE_NAME);
   }
 
-  protected void createIndexAndRepoManager() {
+  protected void createIndexAndRepoManager() throws IOException {
+    String luceneFolderPath = temporaryFolder.newFolder("lucene").getPath();
+    LuceneServiceImpl.luceneIndexFactory = new LuceneRawIndexFactory(luceneFolderPath);
+
     fileAndChunkRegion = Mockito.mock(PartitionedRegion.class);
     fileDataStore = Mockito.mock(PartitionedRegionDataStore.class);
     when(fileAndChunkRegion.getDataStore()).thenReturn(fileDataStore);
@@ -142,13 +153,14 @@ public class PartitionedRepositoryManagerJUnitTest {
     when(prRoot.get("rid")).thenReturn(prConfig);
     PowerMockito.mockStatic(PartitionedRegionHelper.class);
     PowerMockito.when(PartitionedRegionHelper.getPRRoot(cache)).thenReturn(prRoot);
-    repoManager = new PartitionedRepositoryManager(indexForPR, serializer);
+    repoManager = new PartitionedRepositoryManager(indexForPR, serializer,
+        Executors.newSingleThreadExecutor());
     repoManager.setUserRegionForRepositoryManager(userRegion);
     repoManager.allowRepositoryComputation();
   }
 
   @Test
-  public void getByKey() throws BucketNotFoundException, IOException {
+  public void getByKey() throws BucketNotFoundException {
     setUpMockBucket(0);
     setUpMockBucket(1);
 
@@ -165,23 +177,22 @@ public class PartitionedRepositoryManagerJUnitTest {
     assertEquals(repo0, repo113);
     assertNotEquals(repo0, repo1);
 
-    checkRepository(repo0, 0);
-    checkRepository(repo1, 1);
+    checkRepositoryContainsBucket(repo0, 0);
+    checkRepositoryContainsBucket(repo1, 1);
   }
 
   /**
    * Test what happens when a bucket is destroyed.
    */
   @Test
-  public void destroyBucketShouldCreateNewIndexRepository()
-      throws BucketNotFoundException, IOException {
+  public void destroyBucketShouldCreateNewIndexRepository() throws BucketNotFoundException {
     setUpMockBucket(0);
 
     IndexRepositoryImpl repo0 =
         (IndexRepositoryImpl) repoManager.getRepository(userRegion, 0, null);
 
     assertNotNull(repo0);
-    checkRepository(repo0, 0);
+    checkRepositoryContainsBucket(repo0, 0);
 
     BucketRegion fileBucket0 = fileAndChunkBuckets.get(0);
     BucketRegion dataBucket0 = dataBuckets.get(0);
@@ -194,7 +205,7 @@ public class PartitionedRepositoryManagerJUnitTest {
     IndexRepositoryImpl newRepo0 =
         (IndexRepositoryImpl) repoManager.getRepository(userRegion, 0, null);
     assertNotEquals(repo0, newRepo0);
-    checkRepository(newRepo0, 0);
+    checkRepositoryContainsBucket(newRepo0, 0);
     assertTrue(repo0.isClosed());
     assertFalse(repo0.getWriter().isOpen());
   }
@@ -213,45 +224,19 @@ public class PartitionedRepositoryManagerJUnitTest {
 
     when(fileDataStore.getLocalBucketById(eq(0))).thenReturn(null);
 
-    when(fileAndChunkRegion.getOrCreateNodeForBucketWrite(eq(0), (RetryTimeKeeper) any()))
-        .then(new Answer() {
-          @Override
-          public Object answer(InvocationOnMock invocation) throws Throwable {
-            when(fileDataStore.getLocalBucketById(eq(0))).thenReturn(fileAndChunkBuckets.get(0));
-            return null;
-          }
+    when(fileAndChunkRegion.getOrCreateNodeForBucketWrite(eq(0), any()))
+        .then((Answer) invocation -> {
+          when(fileDataStore.getLocalBucketById(eq(0))).thenReturn(fileAndChunkBuckets.get(0));
+          return null;
         });
 
     assertNotNull(repoManager.getRepository(userRegion, 0, null));
   }
 
-  @Test
-  public void getByRegion() throws BucketNotFoundException {
-    setUpMockBucket(0);
-    setUpMockBucket(1);
-
-    Set<Integer> buckets = new LinkedHashSet<Integer>(Arrays.asList(0, 1));
-    InternalRegionFunctionContext ctx = Mockito.mock(InternalRegionFunctionContext.class);
-    when(ctx.getLocalBucketSet((any()))).thenReturn(buckets);
-    Collection<IndexRepository> repos = repoManager.getRepositories(ctx);
-    assertEquals(2, repos.size());
-
-    Iterator<IndexRepository> itr = repos.iterator();
-    IndexRepositoryImpl repo0 = (IndexRepositoryImpl) itr.next();
-    IndexRepositoryImpl repo1 = (IndexRepositoryImpl) itr.next();
-
-    assertNotNull(repo0);
-    assertNotNull(repo1);
-    assertNotEquals(repo0, repo1);
-
-    checkRepository(repo0, 0);
-    checkRepository(repo1, 1);
-  }
-
   /**
    * Test that we get the expected exception when a user bucket is missing
    */
-  @Test(expected = BucketNotFoundException.class)
+  @Test(expected = LuceneIndexCreationInProgressException.class)
   public void getMissingBucketByRegion() throws BucketNotFoundException {
     setUpMockBucket(0);
 
@@ -262,15 +247,21 @@ public class PartitionedRepositoryManagerJUnitTest {
     repoManager.getRepositories(ctx);
   }
 
-  protected void checkRepository(IndexRepositoryImpl repo0, int bucketId) {
+  protected void checkRepositoryContainsBucket(IndexRepositoryImpl repo0, int... bucketIds) {
     IndexWriter writer0 = repo0.getWriter();
     RegionDirectory dir0 = (RegionDirectory) writer0.getDirectory();
-    assertEquals(new BucketTargetingMap(fileAndChunkBuckets.get(bucketId), bucketId),
-        dir0.getFileSystem().getFileAndChunkRegion());
+    boolean result = false;
+    for (int bucketId : bucketIds) {
+      BucketTargetingMap bucketTargetingMap =
+          new BucketTargetingMap(fileAndChunkBuckets.get(bucketId), bucketId);
+      result |= bucketTargetingMap.equals(dir0.getFileSystem().getFileAndChunkRegion());
+    }
+
+    assertTrue(result);
     assertEquals(serializer, repo0.getSerializer());
   }
 
-  protected BucketRegion setUpMockBucket(int id) throws BucketNotFoundException {
+  protected void setUpMockBucket(int id) {
     BucketRegion mockBucket = Mockito.mock(BucketRegion.class);
     BucketRegion fileAndChunkBucket = Mockito.mock(BucketRegion.class);
     // Allowing the fileAndChunkBucket to behave like a map so that the IndexWriter operations don't
@@ -290,6 +281,64 @@ public class PartitionedRepositoryManagerJUnitTest {
     BucketAdvisor mockBucketAdvisor = Mockito.mock(BucketAdvisor.class);
     when(fileAndChunkBucket.getBucketAdvisor()).thenReturn(mockBucketAdvisor);
     when(mockBucketAdvisor.isPrimary()).thenReturn(true);
-    return mockBucket;
   }
+
+  @Test
+  public void queryByRegionWaitingForRepoToBeCreated() {
+    setUpMockBucket(0);
+    setUpMockBucket(1);
+
+    setupIsIndexAvailable();
+
+    Set<Integer> buckets = new LinkedHashSet<>(Arrays.asList(0, 1));
+    InternalRegionFunctionContext ctx = Mockito.mock(InternalRegionFunctionContext.class);
+    when(ctx.getLocalBucketSet((any()))).thenReturn(buckets);
+    final Collection<IndexRepository> repositories = new HashSet<>();
+
+    Awaitility.await().pollDelay(1, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+        .atMost(500, TimeUnit.SECONDS).until(() -> {
+          try {
+            repositories.addAll(repoManager.getRepositories(ctx));
+          } catch (BucketNotFoundException | LuceneIndexCreationInProgressException e) {
+          }
+          return repositories.size() == 2;
+        });
+
+    Iterator<IndexRepository> itr = repositories.iterator();
+    IndexRepositoryImpl repo0 = (IndexRepositoryImpl) itr.next();
+    IndexRepositoryImpl repo1 = (IndexRepositoryImpl) itr.next();
+
+    assertNotNull(repo0);
+    assertNotNull(repo1);
+    assertNotEquals(repo0, repo1);
+
+    checkRepositoryContainsBucket(repo0, 0, 1);
+    checkRepositoryContainsBucket(repo1, 0, 1);
+  }
+
+  private void setupIsIndexAvailable() {
+    when(indexForPR.isIndexAvailable(1)).then((Answer) invocation -> {
+      boolean result;
+      Boolean isAvailable = isIndexAvailableMap.get(1);
+      if (isAvailable == null || !isAvailable) {
+        isIndexAvailableMap.put(1, true);
+        result = false;
+      } else {
+        result = true;
+      }
+      return result;
+    });
+    when(indexForPR.isIndexAvailable(0)).then((Answer) invocation -> {
+      boolean result;
+      Boolean isAvailable = isIndexAvailableMap.get(0);
+      if (isAvailable == null || !isAvailable) {
+        isIndexAvailableMap.put(0, true);
+        result = false;
+      } else {
+        result = true;
+      }
+      return result;
+    });
+  }
+
 }

@@ -15,6 +15,7 @@
 package org.apache.geode.cache.lucene.internal;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
 
 import org.apache.geode.cache.lucene.LuceneSerializer;
 import org.apache.geode.cache.lucene.internal.repository.IndexRepository;
@@ -22,10 +23,12 @@ import org.apache.geode.internal.cache.BucketNotFoundException;
 import org.apache.geode.internal.cache.PartitionedRegion;
 
 public class RawLuceneRepositoryManager extends PartitionedRepositoryManager {
-  public static IndexRepositoryFactory indexRepositoryFactory = new RawIndexRepositoryFactory();
+  public static RawIndexRepositoryFactory indexRepositoryFactory = new RawIndexRepositoryFactory();
 
-  public RawLuceneRepositoryManager(LuceneIndexImpl index, LuceneSerializer serializer) {
-    super(index, serializer);
+  public RawLuceneRepositoryManager(LuceneIndexImpl index, LuceneSerializer serializer,
+      ExecutorService waitingThreadPool, String luceneFolderPath) {
+    super(index, serializer, waitingThreadPool);
+    indexRepositoryFactory.setLuceneFolderPath(luceneFolderPath);
   }
 
   @Override

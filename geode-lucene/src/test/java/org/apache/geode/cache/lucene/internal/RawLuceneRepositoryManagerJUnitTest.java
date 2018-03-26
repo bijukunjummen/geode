@@ -19,6 +19,9 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
+import java.util.concurrent.Executors;
+
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.store.Directory;
@@ -35,12 +38,11 @@ import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionDataStore;
 import org.apache.geode.test.fake.Fakes;
-import org.apache.geode.test.junit.categories.LuceneTest;
 
 public class RawLuceneRepositoryManagerJUnitTest extends PartitionedRepositoryManagerJUnitTest {
 
   @Before
-  public void setUp() {
+  public void setUp() throws IOException {
     cache = Fakes.cache();
 
     userRegion = Mockito.mock(PartitionedRegion.class);
@@ -53,11 +55,12 @@ public class RawLuceneRepositoryManagerJUnitTest extends PartitionedRepositoryMa
 
   @After
   public void tearDown() {
-    ((RawLuceneRepositoryManager) repoManager).close();
+    repoManager.close();
   }
 
-  protected void createIndexAndRepoManager() {
-    LuceneServiceImpl.luceneIndexFactory = new LuceneRawIndexFactory();
+  protected void createIndexAndRepoManager() throws IOException {
+    String luceneFolderPath = temporaryFolder.newFolder("lucene").getPath();
+    LuceneServiceImpl.luceneIndexFactory = new LuceneRawIndexFactory(luceneFolderPath);
 
     indexStats = Mockito.mock(LuceneIndexStats.class);
     indexForPR = Mockito.mock(LuceneRawIndex.class);
@@ -66,7 +69,8 @@ public class RawLuceneRepositoryManagerJUnitTest extends PartitionedRepositoryMa
     when(indexForPR.getCache()).thenReturn(cache);
     when(indexForPR.getRegionPath()).thenReturn("/testRegion");
     when(indexForPR.withPersistence()).thenReturn(true);
-    repoManager = new RawLuceneRepositoryManager(indexForPR, serializer);
+    repoManager = new RawLuceneRepositoryManager(indexForPR, serializer,
+        Executors.newSingleThreadExecutor(), luceneFolderPath);
     repoManager.setUserRegionForRepositoryManager(userRegion);
     repoManager.allowRepositoryComputation();
   }
@@ -78,14 +82,14 @@ public class RawLuceneRepositoryManagerJUnitTest extends PartitionedRepositoryMa
   }
 
   @Override
-  protected void checkRepository(IndexRepositoryImpl repo0, int bucketId) {
+  protected void checkRepositoryContainsBucket(IndexRepositoryImpl repo0, int... bucketIds) {
     IndexWriter writer0 = repo0.getWriter();
     Directory dir0 = writer0.getDirectory();
     assertTrue(dir0 instanceof NIOFSDirectory);
   }
 
   @Override
-  protected BucketRegion setUpMockBucket(int id) throws BucketNotFoundException {
+  protected void setUpMockBucket(int id) {
     BucketRegion mockBucket = Mockito.mock(BucketRegion.class);
     when(mockBucket.getId()).thenReturn(id);
     when(userRegion.getBucketRegion(eq(id), eq(null))).thenReturn(mockBucket);
@@ -95,7 +99,6 @@ public class RawLuceneRepositoryManagerJUnitTest extends PartitionedRepositoryMa
     dataBuckets.put(id, mockBucket);
 
     repoManager.computeRepository(mockBucket.getId());
-    return mockBucket;
   }
 
   @Test

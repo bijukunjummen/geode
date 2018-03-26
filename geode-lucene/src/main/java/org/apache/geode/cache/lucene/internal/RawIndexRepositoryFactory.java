@@ -30,6 +30,9 @@ import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.PartitionedRegion;
 
 public class RawIndexRepositoryFactory extends IndexRepositoryFactory {
+
+  private String luceneFolderPath = "";
+
   public RawIndexRepositoryFactory() {}
 
   @Override
@@ -46,7 +49,9 @@ public class RawIndexRepositoryFactory extends IndexRepositoryFactory {
     if (indexForRaw.withPersistence()) {
       String bucketLocation = LuceneServiceImpl.getUniqueIndexName(index.getName(),
           index.getRegionPath() + "_" + bucketId);
-      File location = new File(index.getName(), bucketLocation);
+      String filePath = luceneFolderPath.isEmpty() ? index.getName()
+          : luceneFolderPath + File.separator + index.getName();
+      File location = new File(filePath, bucketLocation);
       if (!location.exists()) {
         location.mkdirs();
       }
@@ -59,5 +64,9 @@ public class RawIndexRepositoryFactory extends IndexRepositoryFactory {
 
     return new IndexRepositoryImpl(null, writer, serializer, indexForRaw.getIndexStats(),
         dataBucket, null, "", indexForRaw);
+  }
+
+  public void setLuceneFolderPath(String luceneFolderPath) {
+    this.luceneFolderPath = luceneFolderPath;
   }
 }

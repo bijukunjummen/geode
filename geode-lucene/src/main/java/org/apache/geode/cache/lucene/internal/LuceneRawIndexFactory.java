@@ -17,8 +17,14 @@ package org.apache.geode.cache.lucene.internal;
 import org.apache.geode.internal.cache.InternalCache;
 
 public class LuceneRawIndexFactory extends LuceneIndexImplFactory {
+  private String luceneFolderPath;
+
+  public LuceneRawIndexFactory(String luceneFolderPath) {
+    this.luceneFolderPath = luceneFolderPath;
+  }
+
   @Override
   public LuceneIndexImpl create(String indexName, String regionPath, InternalCache cache) {
-    return new LuceneRawIndex(indexName, regionPath, cache);
+    return new LuceneRawIndex(indexName, regionPath, cache, luceneFolderPath);
   }
 }

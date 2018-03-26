@@ -69,6 +69,7 @@ import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.test.junit.categories.IntegrationTest;
 import org.apache.geode.test.junit.categories.LuceneTest;
+import org.apache.geode.test.junit.rules.serializable.SerializableTemporaryFolder;
 
 /**
  * Tests of creating lucene indexes on regions. All tests of index creation use cases should be in
@@ -84,6 +85,9 @@ public class LuceneIndexCreationIntegrationTest extends LuceneIntegrationTest {
 
   @Rule
   public ExpectedException expectedException = ExpectedException.none();
+
+  @Rule
+  public SerializableTemporaryFolder temporaryFolder = new SerializableTemporaryFolder();
 
 
   @Test
@@ -162,14 +166,15 @@ public class LuceneIndexCreationIntegrationTest extends LuceneIntegrationTest {
 
   @Test
   public void shouldCreateRawIndexIfSpecifiedItsFactory()
-      throws BucketNotFoundException, InterruptedException {
+      throws BucketNotFoundException, InterruptedException, IOException {
     Map<String, Analyzer> analyzers = new HashMap<>();
 
     final RecordingAnalyzer field1Analyzer = new RecordingAnalyzer();
     final RecordingAnalyzer field2Analyzer = new RecordingAnalyzer();
     analyzers.put("field1", field1Analyzer);
     analyzers.put("field2", field2Analyzer);
-    LuceneServiceImpl.luceneIndexFactory = new LuceneRawIndexFactory();
+    LuceneServiceImpl.luceneIndexFactory =
+        new LuceneRawIndexFactory(temporaryFolder.newFolder("lucene").getPath());
     try {
       luceneService.createIndexFactory().setFields(analyzers).create(INDEX_NAME, REGION_NAME);
       Region region = createRegion();
