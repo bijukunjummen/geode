@@ -892,18 +892,15 @@ public class ClusterDistributionManager implements DistributionManager {
           @Override
           public Thread newThread(final Runnable command) {
             ClusterDistributionManager.this.stats.incWaitingThreadStarts();// will it be ok?
-            final Runnable r = new Runnable() {
-              @Override
-              public void run() {
-                ClusterDistributionManager.this.stats.incWaitingThreads(1);// will it be ok
-                try {
-                  ConnectionTable.threadWantsSharedResources();
-                  Connection.makeReaderThread();
-                  runUntilShutdown(command);
-                } finally {
-                  ConnectionTable.releaseThreadsSockets();
-                  ClusterDistributionManager.this.stats.incWaitingThreads(-1);
-                }
+            final Runnable r = () -> {
+              ClusterDistributionManager.this.stats.incWaitingThreads(1);// will it be ok
+              try {
+                ConnectionTable.threadWantsSharedResources();
+                Connection.makeReaderThread();
+                runUntilShutdown(command);
+              } finally {
+                ConnectionTable.releaseThreadsSockets();
+                ClusterDistributionManager.this.stats.incWaitingThreads(-1);
               }
             };
             Thread thread = new Thread(group, r,

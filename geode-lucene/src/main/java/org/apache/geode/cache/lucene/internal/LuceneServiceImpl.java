@@ -363,7 +363,7 @@ public class LuceneServiceImpl implements InternalLuceneService {
   }
 
   public List<LuceneIndex> getIndexes(String regionPath) {
-    List<LuceneIndex> indexes = new ArrayList();
+    List<LuceneIndex> indexes = new ArrayList<>();
     for (LuceneIndex index : getAllIndexes()) {
       if (index.getRegionPath().equals(regionPath)) {
         indexes.add(index);
@@ -373,7 +373,7 @@ public class LuceneServiceImpl implements InternalLuceneService {
   }
 
   public List<LuceneIndexCreationProfile> getDefinedIndexes(String regionPath) {
-    List<LuceneIndexCreationProfile> profiles = new ArrayList();
+    List<LuceneIndexCreationProfile> profiles = new ArrayList<>();
     for (LuceneIndexCreationProfile profile : getAllDefinedIndexes()) {
       if (profile.getRegionPath().equals(regionPath)) {
         profiles.add(profile);
