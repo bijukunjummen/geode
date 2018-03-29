@@ -104,6 +104,9 @@ public class PartitionedRepositoryManager implements RepositoryManager {
                 "Lucene Index creation in progress for bucket: " + userBucket.getId());
           }
         }
+        else{
+          repos.add(getRepository(userBucket.getId()));
+        }
       }
     }
 
