@@ -88,20 +88,21 @@ public class PartitionedRepositoryManager implements RepositoryManager {
         throw new BucketNotFoundException(
             "User bucket was not found for region " + region + "bucket id " + bucketId);
       } else {
-        if (index.isIndexAvailable(userBucket.getId())) {
-          repos.add(getRepository(userBucket.getId()));
-        } else {
-          waitingThreadPoolFromDM.execute(() -> {
-            try {
-              IndexRepository repository = getRepository(userBucket.getId());
-              repos.add(repository);
-            } catch (BucketNotFoundException e) {
-              logger.debug(
-                  "Lucene Index creation in progress. Catching BucketNotFoundException");
-            }
-          });
-          throw new LuceneIndexCreationInProgressException(
-              "Lucene Index creation in progress for bucket: " + userBucket.getId());
+        if (LuceneServiceImpl.LUCENE_REINDEX) {
+          if (index.isIndexAvailable(userBucket.getId())) {
+            repos.add(getRepository(userBucket.getId()));
+          } else {
+            waitingThreadPoolFromDM.execute(() -> {
+              try {
+                IndexRepository repository = getRepository(userBucket.getId());
+                repos.add(repository);
+              } catch (BucketNotFoundException e) {
+                logger.debug("Lucene Index creation in progress. Catching BucketNotFoundException");
+              }
+            });
+            throw new LuceneIndexCreationInProgressException(
+                "Lucene Index creation in progress for bucket: " + userBucket.getId());
+          }
         }
       }
     }
