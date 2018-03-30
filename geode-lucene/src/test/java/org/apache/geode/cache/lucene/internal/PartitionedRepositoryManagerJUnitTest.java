@@ -60,6 +60,7 @@ import org.apache.geode.cache.lucene.internal.partition.BucketTargetingMap;
 import org.apache.geode.cache.lucene.internal.repository.IndexRepository;
 import org.apache.geode.cache.lucene.internal.repository.IndexRepositoryImpl;
 import org.apache.geode.cache.lucene.internal.repository.serializer.HeterogeneousLuceneSerializer;
+import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.locks.DLockService;
 import org.apache.geode.internal.cache.BucketAdvisor;
 import org.apache.geode.internal.cache.BucketNotFoundException;
@@ -105,6 +106,7 @@ public class PartitionedRepositoryManagerJUnitTest {
 
   @Before
   public void setUp() throws IOException {
+    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "luceneReindex","true");
     cache = Fakes.cache();
     userRegion = Mockito.mock(PartitionedRegion.class);
     userDataStore = Mockito.mock(PartitionedRegionDataStore.class);
@@ -242,6 +244,18 @@ public class PartitionedRepositoryManagerJUnitTest {
 
     Set<Integer> buckets = new LinkedHashSet<Integer>(Arrays.asList(0, 1));
 
+    InternalRegionFunctionContext ctx = Mockito.mock(InternalRegionFunctionContext.class);
+    when(ctx.getLocalBucketSet((any()))).thenReturn(buckets);
+    repoManager.getRepositories(ctx);
+  }
+
+  @Test(expected = LuceneIndexCreationInProgressException.class)
+  public void queryByRegionFailingWithInProgressException()
+      throws LuceneIndexCreationInProgressException, BucketNotFoundException {
+    setUpMockBucket(0);
+    setUpMockBucket(1);
+
+    Set<Integer> buckets = new LinkedHashSet<>(Arrays.asList(0, 1));
     InternalRegionFunctionContext ctx = Mockito.mock(InternalRegionFunctionContext.class);
     when(ctx.getLocalBucketSet((any()))).thenReturn(buckets);
     repoManager.getRepositories(ctx);
